@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
@@ -31,15 +32,22 @@ func New() (*Service, error) {
 func (s *Service) Register() error {
 	r := gin.Default()
 
-	// no tocar
+	// // no tocar
 	corsConfig := cors.DefaultConfig()
 	corsConfig.AllowOrigins = []string{"*"}
 	corsConfig.AllowWildcard = true
+	corsConfig.AllowHeaders = []string{"Authorization", "Origin", "Content-Length", "Content-Type", "Access-Control-Allow-Headers", "Access-Control-Allow-Origin"}
 	r.Use(cors.New(corsConfig))
 
 	r.POST("/api/login", s.login())
+	r.POST("/api/checkemail", s.checkEmail())
 	r.POST("/api/register", s.register())
-	r.GET("/api/users/me", s.getme())
+	r.GET("/api/users/me/skills", s.getMySkills())
+	r.POST("/api/users/me/skills", s.setMySkills())
+	r.GET("/api/users/me", s.getMyself())
+	r.POST("/api/skills/find", s.findSkill())
+	r.GET("/api/offers", s.getOffers())
+	r.GET("/api/offers/:id", s.getOffer())
 
 	return r.Run()
 }
@@ -49,7 +57,9 @@ func erro(err error) gin.H {
 }
 
 type Claims struct {
-	ID uint64 `json:"id"`
+	ID        uint64 `json:"id"`
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
 	jwt.StandardClaims
 }
 
@@ -128,7 +138,9 @@ func (s *Service) login() gin.HandlerFunc {
 
 		expirationTime := time.Now().Add(24 * time.Hour)
 		claims := &Claims{
-			ID: user.ID,
+			ID:        user.ID,
+			FirstName: user.FirstName,
+			LastName:  user.LastName,
 			StandardClaims: jwt.StandardClaims{
 				ExpiresAt: expirationTime.Unix(),
 			},
@@ -177,7 +189,7 @@ func (s *Service) getUserFromReq(c *gin.Context) (models.User, error) {
 	return user, nil
 }
 
-func (s *Service) getme() gin.HandlerFunc {
+func (s *Service) getMyself() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		user, err := s.getUserFromReq(c)
 		if err != nil {
@@ -186,5 +198,136 @@ func (s *Service) getme() gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, user)
+	}
+}
+
+func (s *Service) getMySkills() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		user, err := s.getUserFromReq(c)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, erro(err))
+			return
+		}
+
+		skills, err := s.db.GetSkills(context.TODO(), user.ID)
+		if len(skills) == 0 {
+			c.JSON(http.StatusOK, make([]string, 0))
+			return
+		}
+
+		c.JSON(http.StatusOK, skills)
+	}
+}
+
+func (s *Service) findSkill() gin.HandlerFunc {
+	type requestParams struct {
+		Name string `json:"name"`
+	}
+	return func(c *gin.Context) {
+		var req requestParams
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, erro(err))
+			return
+		}
+
+		skills, err := s.db.SearchSkills(context.TODO(), req.Name)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, erro(err))
+			return
+		}
+
+		if len(skills) == 0 {
+			c.JSON(http.StatusOK, make([]string, 0))
+			return
+		}
+
+		c.JSON(http.StatusOK, skills)
+	}
+}
+
+func (s *Service) setMySkills() gin.HandlerFunc {
+	type requestParams []uint64
+
+	return func(c *gin.Context) {
+		user, err := s.getUserFromReq(c)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, erro(err))
+			return
+		}
+
+		var req requestParams
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, erro(err))
+			return
+		}
+
+		if err := s.db.SetSkills(context.TODO(), user.ID, req); err != nil {
+			c.JSON(http.StatusInternalServerError, erro(err))
+			return
+		}
+
+		c.JSON(http.StatusOK, "ok")
+	}
+}
+
+func (s *Service) checkEmail() gin.HandlerFunc {
+	type requestParams struct {
+		Email string `json:"email"`
+	}
+	return func(c *gin.Context) {
+		var req requestParams
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, erro(err))
+			return
+		}
+
+		ok, err := s.db.ExistsEmail(context.TODO(), req.Email)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, erro(err))
+			return
+		}
+
+		if ok {
+			c.JSON(http.StatusBadRequest, "exists")
+			return
+		}
+
+		c.JSON(http.StatusOK, "does not exisdt")
+	}
+}
+
+func (s *Service) getOffers() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		jobs, err := s.db.GetJobs(context.TODO())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, erro(err))
+			return
+		}
+
+		if len(jobs) == 0 {
+			c.JSON(http.StatusOK, make([]string, 0))
+			return
+		}
+
+		c.JSON(http.StatusOK, jobs)
+	}
+}
+
+func (s *Service) getOffer() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		rawID := c.Param("id")
+		n, err := strconv.ParseUint(rawID, 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, erro(err))
+			return
+		}
+
+		job, err := s.db.GetJob(context.TODO(), n)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, erro(err))
+			return
+		}
+
+		c.JSON(http.StatusOK, job)
 	}
 }

@@ -13,7 +13,6 @@ type User struct {
 }
 
 type Skill struct {
-	ID     uint64
-	Nom    string
-	InfoId uint64
+	ID   uint64 `json:"id"`
+	Name string `json:"name"`
 }
