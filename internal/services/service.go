@@ -2,8 +2,13 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -16,7 +21,8 @@ import (
 )
 
 type Service struct {
-	db *database.PostgresDb
+	db      *database.PostgresDb
+	connStr string
 }
 
 func New() (*Service, error) {
@@ -26,7 +32,10 @@ func New() (*Service, error) {
 		return nil, err
 	}
 
-	return &Service{db: db}, nil
+	return &Service{
+		db:      db,
+		connStr: "192.168.1.1:8383",
+	}, nil
 }
 
 func (s *Service) Register() error {
@@ -45,9 +54,13 @@ func (s *Service) Register() error {
 	r.GET("/api/users/me/skills", s.getMySkills())
 	r.POST("/api/users/me/skills", s.setMySkills())
 	r.GET("/api/users/me", s.getMyself())
+	r.GET("/api/users/me/jobprofile", s.quiEts())
+	r.GET("/api/users/:id/image", s.getImage())
+	r.POST("/api/users/me/image", s.updateImage())
 	r.POST("/api/skills/find", s.findSkill())
 	r.GET("/api/offers", s.getOffers())
 	r.GET("/api/offers/:id", s.getOffer())
+	r.POST("/api/puta", s.puta())
 
 	return r.Run()
 }
@@ -201,6 +214,59 @@ func (s *Service) getMyself() gin.HandlerFunc {
 	}
 }
 
+func (s *Service) getImage() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id := c.Param("id")
+		path := fmt.Sprintf("./img/%s.jpeg", id)
+		if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+			path = "./img/base.jpeg"
+		}
+		c.File(path)
+	}
+}
+
+func (s *Service) updateImage() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		user, err := s.getUserFromReq(c)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, erro(err))
+			return
+		}
+
+		file, err := c.FormFile("image")
+		if err != nil {
+			c.JSON(http.StatusBadRequest, erro(err))
+			return
+		}
+
+		if file == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Please provide an image"})
+			return
+		}
+
+		f, err := file.Open()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, erro(err))
+			return
+		}
+		defer f.Close()
+
+		wr, err := os.OpenFile(fmt.Sprintf("./img/%v.jpeg", user.ID), os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, erro(err))
+			return
+		}
+		defer wr.Close()
+
+		if _, err := io.Copy(wr, f); err != nil {
+			c.JSON(http.StatusInternalServerError, erro(err))
+			return
+		}
+
+		c.JSON(http.StatusOK, "ok")
+	}
+}
+
 func (s *Service) getMySkills() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		user, err := s.getUserFromReq(c)
@@ -296,22 +362,22 @@ func (s *Service) checkEmail() gin.HandlerFunc {
 	}
 }
 
-func (s *Service) getOffers() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		jobs, err := s.db.GetJobs(context.TODO())
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, erro(err))
-			return
-		}
-
-		if len(jobs) == 0 {
-			c.JSON(http.StatusOK, make([]string, 0))
-			return
-		}
-
-		c.JSON(http.StatusOK, jobs)
-	}
-}
+// func (s *Service) getOffers() gin.HandlerFunc {
+// 	return func(c *gin.Context) {
+// 		jobs, err := s.db.GetJobs(context.TODO())
+// 		if err != nil {
+// 			c.JSON(http.StatusInternalServerError, erro(err))
+// 			return
+// 		}
+//
+// 		if len(jobs) == 0 {
+// 			c.JSON(http.StatusOK, make([]string, 0))
+// 			return
+// 		}
+//
+// 		c.JSON(http.StatusOK, jobs)
+// 	}
+// }
 
 func (s *Service) getOffer() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -330,4 +396,193 @@ func (s *Service) getOffer() gin.HandlerFunc {
 
 		c.JSON(http.StatusOK, job)
 	}
+}
+
+func (s *Service) puta() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req []uint64
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, erro(err))
+			return
+		}
+
+		var offers []models.Offer
+		for _, u := range req {
+			j, err := s.db.GetJobBySiteId(context.TODO(), u)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, erro(err))
+				return
+			}
+
+			offers = append(offers, j)
+		}
+
+		if len(offers) == 0 {
+			c.JSON(http.StatusOK, make([]string, 0))
+			return
+		}
+
+		c.JSON(http.StatusOK, offers)
+	}
+}
+
+func (s *Service) quiEts() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		user, err := s.getUserFromReq(c)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, erro(err))
+			return
+		}
+
+		skills, err := s.db.GetSkills(context.TODO(), user.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, erro(err))
+			return
+		}
+
+		if skills == nil {
+			c.JSON(http.StatusNoContent, gin.H{"error": "you have no skill fucking dumbass"})
+			return
+		}
+
+		var clean []string
+		for _, skill := range skills {
+			clean = append(clean, skill.Name)
+		}
+
+		conn, err := net.Dial("tcp", s.connStr)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, erro(err))
+			return
+		}
+		defer conn.Close()
+
+		data := struct {
+			Cmd    string   `json:"cmd"`
+			Skills []string `json:"skills"`
+		}{
+			Cmd:    "SSK",
+			Skills: clean,
+		}
+
+		if err := s.writePacket(conn, data); err != nil {
+			c.JSON(http.StatusInternalServerError, erro(err))
+			return
+		}
+
+		var res []string
+		if err := s.readPacket(conn, &res); err != nil {
+			c.JSON(http.StatusInternalServerError, erro(err))
+			return
+		}
+
+		c.JSON(http.StatusOK, res)
+	}
+}
+
+// et donc una offer i retornes relaciones
+// et donc skills (TEXT) i retornes perfils ("stack")
+func (s *Service) getOffers() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		user, err := s.getUserFromReq(c)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, erro(err))
+			return
+		}
+
+		skills, err := s.db.GetSkills(context.TODO(), user.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, erro(err))
+			return
+		}
+
+		if skills == nil {
+			c.JSON(http.StatusNoContent, gin.H{"error": "you have no skill fucking dumbass"})
+			return
+		}
+
+		var clean []string
+		for _, skill := range skills {
+			clean = append(clean, skill.Name)
+		}
+
+		conn, err := net.Dial("tcp", s.connStr)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, erro(err))
+			return
+		}
+		defer conn.Close()
+
+		data := struct {
+			Cmd    string   `json:"cmd"`
+			Skills []string `json:"skills"`
+		}{
+			Cmd:    "OFF",
+			Skills: clean,
+		}
+
+		if err := s.writePacket(conn, data); err != nil {
+			c.JSON(http.StatusInternalServerError, erro(err))
+			return
+		}
+
+		var resp []uint64
+		if err := s.readPacket(conn, &resp); err != nil {
+			c.JSON(http.StatusInternalServerError, erro(err))
+			return
+		}
+
+		var offers []models.Offer
+		for _, u := range resp {
+			j, err := s.db.GetJob(context.TODO(), u)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, erro(err))
+				return
+			}
+
+			offers = append(offers, j)
+		}
+
+		if len(offers) == 0 {
+			c.JSON(http.StatusOK, make([]string, 0))
+			return
+		}
+
+		c.JSON(http.StatusOK, offers)
+	}
+}
+
+func (s *Service) readPacket(r io.Reader, pk interface{}) error {
+	temp := make([]byte, 3)
+	_, err := io.ReadAtLeast(r, temp, 3)
+	if err != nil {
+		return err
+	}
+
+	n, err := strconv.Atoi(string(temp))
+	if err != nil {
+		return err
+	}
+
+	buff := make([]byte, n)
+	if _, err := io.ReadAtLeast(r, buff, n); err != nil {
+		return err
+	}
+
+	return json.Unmarshal(buff, pk)
+}
+
+func (s *Service) writePacket(w io.Writer, pk interface{}) error {
+	b, err := json.Marshal(pk)
+	if err != nil {
+		return err
+	}
+
+	_, err = fmt.Fprintf(w, "%03d", len(b))
+	if err != nil {
+		return err
+	}
+
+	_, err = w.Write(b)
+	return err
 }

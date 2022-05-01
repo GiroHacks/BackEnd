@@ -165,3 +165,18 @@ func (p *PostgresDb) GetJob(ctx context.Context, id uint64) (models.Offer, error
 
 	return offer, nil
 }
+
+func (p *PostgresDb) GetJobBySiteId(ctx context.Context, id uint64) (models.Offer, error) {
+	rows, err := p.db.Query(ctx, "SELECT id, site_id, publication_date, province, offer_type, industry, job_title, name, description, requirements, min_salary, max_salary, num_views, num_leads FROM offers WHERE site_id = $1", id)
+	if err != nil {
+		return models.Offer{}, err
+	}
+	defer rows.Close()
+
+	var offer models.Offer
+	if err := pgxscan.ScanOne(&offer, rows); err != nil {
+		return models.Offer{}, err
+	}
+
+	return offer, nil
+}
