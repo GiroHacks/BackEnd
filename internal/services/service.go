@@ -526,14 +526,18 @@ func (s *Service) getOffers() gin.HandlerFunc {
 			return
 		}
 
-		var resp []uint64
+		// var resp []uint64
+		var resp struct {
+			Offers []uint64 `json:"offers"`
+			Top    []string `json:"top"`
+		}
 		if err := s.readPacket(conn, &resp); err != nil {
 			c.JSON(http.StatusInternalServerError, erro(err))
 			return
 		}
 
 		var offers []models.Offer
-		for _, u := range resp {
+		for _, u := range resp.Offers {
 			j, err := s.db.GetJob(context.TODO(), u)
 			if err != nil {
 				c.JSON(http.StatusInternalServerError, erro(err))
@@ -543,18 +547,21 @@ func (s *Service) getOffers() gin.HandlerFunc {
 			offers = append(offers, j)
 		}
 
-		if len(offers) == 0 {
-			c.JSON(http.StatusOK, make([]string, 0))
-			return
+		a := struct {
+			Offers []models.Offer `json:"offers"`
+			Top    []string       `json:"top"`
+		}{
+			Offers: offers,
+			Top:    resp.Top,
 		}
 
-		c.JSON(http.StatusOK, offers)
+		c.JSON(http.StatusOK, a)
 	}
 }
 
 func (s *Service) readPacket(r io.Reader, pk interface{}) error {
-	temp := make([]byte, 3)
-	_, err := io.ReadAtLeast(r, temp, 3)
+	temp := make([]byte, 6)
+	_, err := io.ReadAtLeast(r, temp, len(temp))
 	if err != nil {
 		return err
 	}
@@ -578,7 +585,7 @@ func (s *Service) writePacket(w io.Writer, pk interface{}) error {
 		return err
 	}
 
-	_, err = fmt.Fprintf(w, "%03d", len(b))
+	_, err = fmt.Fprintf(w, "%06d", len(b))
 	if err != nil {
 		return err
 	}
