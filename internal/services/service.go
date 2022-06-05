@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -34,7 +35,7 @@ func New() (*Service, error) {
 
 	return &Service{
 		db:      db,
-		connStr: "192.168.1.1:8383",
+		connStr: "127.0.0.1:8383",
 	}, nil
 }
 
@@ -81,11 +82,12 @@ var errUnauthorized = errors.New("unauthorized")
 
 func (s *Service) register() gin.HandlerFunc {
 	type requestParams struct {
-		Email     string `json:"email"`
-		Password  string `json:"password"`
-		FirstName string `json:"first_name"`
-		LastName  string `json:"last_name"`
-		Phone     string `json:"phone"`
+		Email     string   `json:"email"`
+		Password  string   `json:"password"`
+		FirstName string   `json:"first_name"`
+		LastName  string   `json:"last_name"`
+		Phone     string   `json:"phone"`
+		Skills    []uint64 `json:"skills"`
 		// Birthdate time.Time `json:"birthdate"`
 	}
 
@@ -114,6 +116,18 @@ func (s *Service) register() gin.HandlerFunc {
 
 		if err := s.db.RegisterUser(context.TODO(), user); err != nil {
 			c.JSON(http.StatusBadRequest, erro(err))
+			log.Printf("err=%v\n", err)
+			return
+		}
+
+		u, err := s.db.GetUser(context.TODO(), req.Email)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, "Error getting your profile: "+err.Error())
+			return
+		}
+
+		if err := s.db.SetSkills(context.TODO(), u.ID, req.Skills); err != nil {
+			c.JSON(http.StatusInternalServerError, "error setting your skills: "+err.Error())
 			return
 		}
 
@@ -441,7 +455,7 @@ func (s *Service) quiEts() gin.HandlerFunc {
 		}
 
 		if skills == nil {
-			c.JSON(http.StatusNoContent, gin.H{"error": "you have no skill fucking dumbass"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "you have no skill"})
 			return
 		}
 
