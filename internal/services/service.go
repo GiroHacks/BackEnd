@@ -9,6 +9,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -470,7 +471,8 @@ func (s *Service) quiEts() gin.HandlerFunc {
 		defer cancel()
 
 		params := strings.Join(clean, ",")
-		res, err := http.Get("http://127.0.0.1:8383/skills?skills=" + params)
+		a := url.QueryEscape(params)
+		res, err := http.Get("http://127.0.0.1:8383/skills?skills=" + a)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, "error creating request: "+err.Error())
 			return
@@ -514,7 +516,8 @@ func (s *Service) getOffers() gin.HandlerFunc {
 		}
 
 		params := strings.Join(clean, ",")
-		res, err := http.Get("http://127.0.0.1:8383/recommend?skills=" + params)
+		a := url.QueryEscape(params)
+		res, err := http.Get("http://127.0.0.1:8383/recommend?skills=" + a)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, "error creating request: "+err.Error())
 			return
