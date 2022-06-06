@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -520,13 +521,43 @@ func (s *Service) getOffers() gin.HandlerFunc {
 		}
 		defer res.Body.Close()
 
-		c.Header("Content-Type", "application/json")
-		n, err := io.Copy(c.Writer, res.Body)
+		b, err := ioutil.ReadAll(res.Body)
 		if err != nil {
-			log.Printf("error copying response from IA: %v", err)
+			log.Printf("error reading all from IA: %v", err)
+			c.JSON(http.StatusInternalServerError, erro(err))
 			return
 		}
-		log.Printf("copied %d bytes from IA", n)
+
+		// var resp []uint64
+		var resp struct {
+			Offers []uint64 `json:"offers"`
+			Top    []string `json:"top"`
+		}
+		if err := json.Unmarshal(b, &resp); err != nil {
+			c.JSON(http.StatusInternalServerError, erro(err))
+			return
+		}
+
+		var offers []models.Offer
+		for _, u := range resp.Offers {
+			j, err := s.db.GetJob(context.TODO(), u)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, erro(err))
+				return
+			}
+
+			offers = append(offers, j)
+		}
+
+		a := struct {
+			Offers []models.Offer `json:"offers"`
+			Top    []string       `json:"top"`
+		}{
+			Offers: offers,
+			Top:    resp.Top,
+		}
+
+		c.JSON(http.StatusOK, a)
 	}
 }
 
