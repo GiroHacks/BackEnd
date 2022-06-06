@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
@@ -464,33 +464,24 @@ func (s *Service) quiEts() gin.HandlerFunc {
 			clean = append(clean, skill.Name)
 		}
 
-		conn, err := net.Dial("tcp", s.connStr)
+		ctx := context.Background()
+		ctx, cancel := context.WithDeadline(ctx, time.Now().Add(time.Second*5))
+		defer cancel()
+
+		params := strings.Join(clean, ",")
+		res, err := http.Get("http://127.0.0.1:8383/skills?skills=" + params)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, erro(err))
+			c.JSON(http.StatusInternalServerError, "error creating request: "+err.Error())
 			return
 		}
-		defer conn.Close()
+		defer res.Body.Close()
 
-		data := struct {
-			Cmd    string   `json:"cmd"`
-			Skills []string `json:"skills"`
-		}{
-			Cmd:    "SSK",
-			Skills: clean,
-		}
-
-		if err := s.writePacket(conn, data); err != nil {
-			c.JSON(http.StatusInternalServerError, erro(err))
+		n, err := io.Copy(c.Writer, res.Body)
+		if err != nil {
+			log.Printf("error copying response from IA: %v", err)
 			return
 		}
-
-		var res []string
-		if err := s.readPacket(conn, &res); err != nil {
-			c.JSON(http.StatusInternalServerError, erro(err))
-			return
-		}
-
-		c.JSON(http.StatusOK, res)
+		log.Printf("copied %d bytes from IA", n)
 	}
 }
 
@@ -511,7 +502,7 @@ func (s *Service) getOffers() gin.HandlerFunc {
 		}
 
 		if skills == nil {
-			c.JSON(http.StatusNoContent, gin.H{"error": "you have no skill fucking dumbass"})
+			c.JSON(http.StatusNoContent, gin.H{"error": "you have no skill"})
 			return
 		}
 
@@ -520,56 +511,20 @@ func (s *Service) getOffers() gin.HandlerFunc {
 			clean = append(clean, skill.Name)
 		}
 
-		conn, err := net.Dial("tcp", s.connStr)
+		params := strings.Join(clean, ",")
+		res, err := http.Get("http://127.0.0.1:8383/recommend?skills=" + params)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, erro(err))
+			c.JSON(http.StatusInternalServerError, "error creating request: "+err.Error())
 			return
 		}
-		defer conn.Close()
+		defer res.Body.Close()
 
-		data := struct {
-			Cmd    string   `json:"cmd"`
-			Skills []string `json:"skills"`
-		}{
-			Cmd:    "OFF",
-			Skills: clean,
-		}
-
-		if err := s.writePacket(conn, data); err != nil {
-			c.JSON(http.StatusInternalServerError, erro(err))
+		n, err := io.Copy(c.Writer, res.Body)
+		if err != nil {
+			log.Printf("error copying response from IA: %v", err)
 			return
 		}
-
-		// var resp []uint64
-		var resp struct {
-			Offers []uint64 `json:"offers"`
-			Top    []string `json:"top"`
-		}
-		if err := s.readPacket(conn, &resp); err != nil {
-			c.JSON(http.StatusInternalServerError, erro(err))
-			return
-		}
-
-		var offers []models.Offer
-		for _, u := range resp.Offers {
-			j, err := s.db.GetJob(context.TODO(), u)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, erro(err))
-				return
-			}
-
-			offers = append(offers, j)
-		}
-
-		a := struct {
-			Offers []models.Offer `json:"offers"`
-			Top    []string       `json:"top"`
-		}{
-			Offers: offers,
-			Top:    resp.Top,
-		}
-
-		c.JSON(http.StatusOK, a)
+		log.Printf("copied %d bytes from IA", n)
 	}
 }
 
