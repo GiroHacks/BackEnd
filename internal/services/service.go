@@ -471,8 +471,7 @@ func (s *Service) quiEts() gin.HandlerFunc {
 		defer cancel()
 
 		params := strings.Join(clean, ",")
-		a := url.QueryEscape(params)
-		res, err := http.Get("http://127.0.0.1:8383/skills?skills=" + a)
+		res, err := http.Get("http://127.0.0.1:8383/skills?skills=" + url.QueryEscape(params))
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, "error creating request: "+err.Error())
 			return
@@ -516,8 +515,7 @@ func (s *Service) getOffers() gin.HandlerFunc {
 		}
 
 		params := strings.Join(clean, ",")
-		a := url.QueryEscape(params)
-		res, err := http.Get("http://127.0.0.1:8383/recommend?skills=" + a)
+		res, err := http.Get("http://127.0.0.1:8383/recommend?skills=" + url.QueryEscape(params))
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, "error creating request: "+err.Error())
 			return
