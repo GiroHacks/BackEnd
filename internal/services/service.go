@@ -463,7 +463,7 @@ func (s *Service) quiEts() gin.HandlerFunc {
 
 		var clean []string
 		for _, skill := range skills {
-			clean = append(clean, skill.Name)
+			clean = append(clean, url.QueryEscape(skill.Name))
 		}
 
 		ctx := context.Background()
@@ -471,8 +471,8 @@ func (s *Service) quiEts() gin.HandlerFunc {
 		defer cancel()
 
 		params := strings.Join(clean, ",")
-		fmt.Println("Requesting from IA: " + "http://127.0.0.1:8383/skills?skills=" + url.QueryEscape(params))
-		res, err := http.Get("http://127.0.0.1:8383/skills?skills=" + url.QueryEscape(params))
+		fmt.Println("Requesting from IA: " + "http://127.0.0.1:8383/skills?skills=" + params)
+		res, err := http.Get("http://127.0.0.1:8383/skills?skills=" + params)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, "error creating request: "+err.Error())
 			return
@@ -512,12 +512,12 @@ func (s *Service) getOffers() gin.HandlerFunc {
 
 		var clean []string
 		for _, skill := range skills {
-			clean = append(clean, skill.Name)
+			clean = append(clean, url.QueryEscape(skill.Name))
 		}
 
 		params := strings.Join(clean, ",")
-		fmt.Println("Requesting from IA: " + "http://127.0.0.1:8383/recommend?skills=" + url.QueryEscape(params))
-		res, err := http.Get("http://127.0.0.1:8383/recommend?skills=" + url.QueryEscape(params))
+		fmt.Println("Requesting from IA: " + "http://127.0.0.1:8383/recommend?skills=" + params)
+		res, err := http.Get("http://127.0.0.1:8383/recommend?skills=" + params)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, "error creating request: "+err.Error())
 			return
