@@ -476,6 +476,7 @@ func (s *Service) quiEts() gin.HandlerFunc {
 		}
 		defer res.Body.Close()
 
+		c.Header("Content-Type", "application/json")
 		n, err := io.Copy(c.Writer, res.Body)
 		if err != nil {
 			log.Printf("error copying response from IA: %v", err)
@@ -519,6 +520,7 @@ func (s *Service) getOffers() gin.HandlerFunc {
 		}
 		defer res.Body.Close()
 
+		c.Header("Content-Type", "application/json")
 		n, err := io.Copy(c.Writer, res.Body)
 		if err != nil {
 			log.Printf("error copying response from IA: %v", err)
