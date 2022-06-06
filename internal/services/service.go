@@ -534,6 +534,7 @@ func (s *Service) getOffers() gin.HandlerFunc {
 			Top    []string `json:"top"`
 		}
 		if err := json.Unmarshal(b, &resp); err != nil {
+			log.Printf("error reading json from IA: %v (%s)", err, string(b))
 			c.JSON(http.StatusInternalServerError, erro(err))
 			return
 		}
@@ -548,6 +549,7 @@ func (s *Service) getOffers() gin.HandlerFunc {
 
 			offers = append(offers, j)
 		}
+		log.Printf("found %v offers", offers)
 
 		a := struct {
 			Offers []models.Offer `json:"offers"`
